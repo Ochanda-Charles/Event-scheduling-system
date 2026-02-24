@@ -53,44 +53,7 @@ This is a **RESTful scheduling API** that allows users to:
 
 The system runs as **two completely independent processes** that communicate only through Redis:
 
-```mermaid
-graph TD
-    Client["Client<br/>(Browser / Mobile / API Tool)"]
-
-    subgraph Process1["Process 1 - server.js (HTTP Server)"]
-        MW["Global Middleware<br/>Helmet, CORS, Morgan, JSON Parser"]
-        Router["Express Router<br/>/auth, /users, /bookings<br/>/organizations, /analytics, /notifications"]
-        Auth["Auth Middleware<br/>Verify JWT -> req.user"]
-        Role["Role Middleware<br/>Check req.user.role"]
-        Handler["Route Handler<br/>Business Logic + Validation"]
-        Model["Model Layer<br/>Parameterised SQL Queries"]
-    end
-
-    subgraph Process2["Process 2 - worker.js (Background Worker)"]
-        Processor["Job Processor<br/>emailQueue.process()"]
-        Templates["Email Templates<br/>BOOKING_CONFIRMATION<br/>BOOKING_CANCELLED<br/>WELCOME, ORG_INVITE"]
-        Sender["Email Sender<br/>Mock (dev) / SendGrid / Resend"]
-    end
-
-    subgraph Storage["Persistent Storage"]
-        PG[("PostgreSQL<br/>users, bookings<br/>organizations, notifications<br/>analytics_events")]
-        Redis[("Redis<br/>Bull Job Queue")]
-    end
-
-    Client -->|"HTTP Request"| MW
-    MW --> Router
-    Router --> Auth
-    Auth --> Role
-    Role --> Handler
-    Handler -->|"SQL Query"| Model
-    Model <-->|"Query / Result"| PG
-    Handler -->|"emailQueue.add(job)<br/>fire-and-forget"| Redis
-    Handler -->|"201 Response<br/>~50ms"| Client
-    Redis -->|"Job dequeued"| Processor
-    Processor --> Templates
-    Templates --> Sender
-    Sender -->|"Email delivered"| Client
-```
+![Diagram](https://mermaid.ink/img/Z3JhcGggVEQKICAgIENsaWVudFsiQ2xpZW50PGJyLz4oQnJvd3NlciAvIE1vYmlsZSAvIEFQSSBUb29sKSJdCgogICAgc3ViZ3JhcGggUHJvY2VzczFbIlByb2Nlc3MgMSAtIHNlcnZlci5qcyAoSFRUUCBTZXJ2ZXIpIl0KICAgICAgICBNV1siR2xvYmFsIE1pZGRsZXdhcmU8YnIvPkhlbG1ldCwgQ09SUywgTW9yZ2FuLCBKU09OIFBhcnNlciJdCiAgICAgICAgUm91dGVyWyJFeHByZXNzIFJvdXRlcjxici8+L2F1dGgsIC91c2VycywgL2Jvb2tpbmdzPGJyLz4vb3JnYW5pemF0aW9ucywgL2FuYWx5dGljcywgL25vdGlmaWNhdGlvbnMiXQogICAgICAgIEF1dGhbIkF1dGggTWlkZGxld2FyZTxici8+VmVyaWZ5IEpXVCAtPiByZXEudXNlciJdCiAgICAgICAgUm9sZVsiUm9sZSBNaWRkbGV3YXJlPGJyLz5DaGVjayByZXEudXNlci5yb2xlIl0KICAgICAgICBIYW5kbGVyWyJSb3V0ZSBIYW5kbGVyPGJyLz5CdXNpbmVzcyBMb2dpYyArIFZhbGlkYXRpb24iXQogICAgICAgIE1vZGVsWyJNb2RlbCBMYXllcjxici8+UGFyYW1ldGVyaXNlZCBTUUwgUXVlcmllcyJdCiAgICBlbmQKCiAgICBzdWJncmFwaCBQcm9jZXNzMlsiUHJvY2VzcyAyIC0gd29ya2VyLmpzIChCYWNrZ3JvdW5kIFdvcmtlcikiXQogICAgICAgIFByb2Nlc3NvclsiSm9iIFByb2Nlc3Nvcjxici8+ZW1haWxRdWV1ZS5wcm9jZXNzKCkiXQogICAgICAgIFRlbXBsYXRlc1siRW1haWwgVGVtcGxhdGVzPGJyLz5CT09LSU5HX0NPTkZJUk1BVElPTjxici8+Qk9PS0lOR19DQU5DRUxMRUQ8YnIvPldFTENPTUUsIE9SR19JTlZJVEUiXQogICAgICAgIFNlbmRlclsiRW1haWwgU2VuZGVyPGJyLz5Nb2NrIChkZXYpIC8gU2VuZEdyaWQgLyBSZXNlbmQiXQogICAgZW5kCgogICAgc3ViZ3JhcGggU3RvcmFnZVsiUGVyc2lzdGVudCBTdG9yYWdlIl0KICAgICAgICBQR1soIlBvc3RncmVTUUw8YnIvPnVzZXJzLCBib29raW5nczxici8+b3JnYW5pemF0aW9ucywgbm90aWZpY2F0aW9uczxici8+YW5hbHl0aWNzX2V2ZW50cyIpXQogICAgICAgIFJlZGlzWygiUmVkaXM8YnIvPkJ1bGwgSm9iIFF1ZXVlIildCiAgICBlbmQKCiAgICBDbGllbnQgLS0+fCJIVFRQIFJlcXVlc3QifCBNVwogICAgTVcgLS0+IFJvdXRlcgogICAgUm91dGVyIC0tPiBBdXRoCiAgICBBdXRoIC0tPiBSb2xlCiAgICBSb2xlIC0tPiBIYW5kbGVyCiAgICBIYW5kbGVyIC0tPnwiU1FMIFF1ZXJ5InwgTW9kZWwKICAgIE1vZGVsIDwtLT58IlF1ZXJ5IC8gUmVzdWx0InwgUEcKICAgIEhhbmRsZXIgLS0+fCJlbWFpbFF1ZXVlLmFkZChqb2IpPGJyLz5maXJlLWFuZC1mb3JnZXQifCBSZWRpcwogICAgSGFuZGxlciAtLT58IjIwMSBSZXNwb25zZTxici8+fjUwbXMifCBDbGllbnQKICAgIFJlZGlzIC0tPnwiSm9iIGRlcXVldWVkInwgUHJvY2Vzc29yCiAgICBQcm9jZXNzb3IgLS0+IFRlbXBsYXRlcwogICAgVGVtcGxhdGVzIC0tPiBTZW5kZXIKICAgIFNlbmRlciAtLT58IkVtYWlsIGRlbGl2ZXJlZCJ8IENsaWVudA==)
 
 > **Key insight:** The HTTP server **never waits** for the email to send. It drops the job into Redis and responds instantly. The worker picks it up independently - this is the **fire-and-forget** pattern.
 
@@ -147,71 +110,7 @@ backend/
 
 ### Entity Relationship Diagram
 
-```mermaid
-erDiagram
-    USERS {
-        serial id PK
-        varchar email UK
-        varchar password_hash
-        varchar name
-        varchar role
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    ORGANIZATIONS {
-        serial id PK
-        varchar name
-        integer owner_id FK
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    ORGANIZATION_MEMBERS {
-        serial id PK
-        integer organization_id FK
-        integer user_id FK
-        varchar role
-        timestamp joined_at
-    }
-
-    BOOKINGS {
-        serial id PK
-        integer user_id FK
-        varchar title
-        timestamp start_time
-        timestamp end_time
-        varchar status
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    ANALYTICS_EVENTS {
-        serial id PK
-        integer user_id FK
-        varchar event_type
-        jsonb metadata
-        timestamp created_at
-    }
-
-    NOTIFICATIONS {
-        serial id PK
-        integer user_id FK
-        varchar type
-        varchar title
-        text message
-        boolean is_read
-        jsonb metadata
-        timestamp created_at
-    }
-
-    USERS ||--o{ BOOKINGS : "creates"
-    USERS ||--o{ ORGANIZATIONS : "owns"
-    USERS ||--o{ ORGANIZATION_MEMBERS : "belongs to"
-    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has"
-    USERS ||--o{ NOTIFICATIONS : "receives"
-    USERS ||--o{ ANALYTICS_EVENTS : "generates"
-```
+![Diagram](https://mermaid.ink/img/ZXJEaWFncmFtCiAgICBVU0VSUyB7CiAgICAgICAgc2VyaWFsIGlkIFBLCiAgICAgICAgdmFyY2hhciBlbWFpbCBVSwogICAgICAgIHZhcmNoYXIgcGFzc3dvcmRfaGFzaAogICAgICAgIHZhcmNoYXIgbmFtZQogICAgICAgIHZhcmNoYXIgcm9sZQogICAgICAgIHRpbWVzdGFtcCBjcmVhdGVkX2F0CiAgICAgICAgdGltZXN0YW1wIHVwZGF0ZWRfYXQKICAgIH0KCiAgICBPUkdBTklaQVRJT05TIHsKICAgICAgICBzZXJpYWwgaWQgUEsKICAgICAgICB2YXJjaGFyIG5hbWUKICAgICAgICBpbnRlZ2VyIG93bmVyX2lkIEZLCiAgICAgICAgdGltZXN0YW1wIGNyZWF0ZWRfYXQKICAgICAgICB0aW1lc3RhbXAgdXBkYXRlZF9hdAogICAgfQoKICAgIE9SR0FOSVpBVElPTl9NRU1CRVJTIHsKICAgICAgICBzZXJpYWwgaWQgUEsKICAgICAgICBpbnRlZ2VyIG9yZ2FuaXphdGlvbl9pZCBGSwogICAgICAgIGludGVnZXIgdXNlcl9pZCBGSwogICAgICAgIHZhcmNoYXIgcm9sZQogICAgICAgIHRpbWVzdGFtcCBqb2luZWRfYXQKICAgIH0KCiAgICBCT09LSU5HUyB7CiAgICAgICAgc2VyaWFsIGlkIFBLCiAgICAgICAgaW50ZWdlciB1c2VyX2lkIEZLCiAgICAgICAgdmFyY2hhciB0aXRsZQogICAgICAgIHRpbWVzdGFtcCBzdGFydF90aW1lCiAgICAgICAgdGltZXN0YW1wIGVuZF90aW1lCiAgICAgICAgdmFyY2hhciBzdGF0dXMKICAgICAgICB0aW1lc3RhbXAgY3JlYXRlZF9hdAogICAgICAgIHRpbWVzdGFtcCB1cGRhdGVkX2F0CiAgICB9CgogICAgQU5BTFlUSUNTX0VWRU5UUyB7CiAgICAgICAgc2VyaWFsIGlkIFBLCiAgICAgICAgaW50ZWdlciB1c2VyX2lkIEZLCiAgICAgICAgdmFyY2hhciBldmVudF90eXBlCiAgICAgICAganNvbmIgbWV0YWRhdGEKICAgICAgICB0aW1lc3RhbXAgY3JlYXRlZF9hdAogICAgfQoKICAgIE5PVElGSUNBVElPTlMgewogICAgICAgIHNlcmlhbCBpZCBQSwogICAgICAgIGludGVnZXIgdXNlcl9pZCBGSwogICAgICAgIHZhcmNoYXIgdHlwZQogICAgICAgIHZhcmNoYXIgdGl0bGUKICAgICAgICB0ZXh0IG1lc3NhZ2UKICAgICAgICBib29sZWFuIGlzX3JlYWQKICAgICAgICBqc29uYiBtZXRhZGF0YQogICAgICAgIHRpbWVzdGFtcCBjcmVhdGVkX2F0CiAgICB9CgogICAgVVNFUlMgfHwtLW97IEJPT0tJTkdTIDogImNyZWF0ZXMiCiAgICBVU0VSUyB8fC0tb3sgT1JHQU5JWkFUSU9OUyA6ICJvd25zIgogICAgVVNFUlMgfHwtLW97IE9SR0FOSVpBVElPTl9NRU1CRVJTIDogImJlbG9uZ3MgdG8iCiAgICBPUkdBTklaQVRJT05TIHx8LS1veyBPUkdBTklaQVRJT05fTUVNQkVSUyA6ICJoYXMiCiAgICBVU0VSUyB8fC0tb3sgTk9USUZJQ0FUSU9OUyA6ICJyZWNlaXZlcyIKICAgIFVTRVJTIHx8LS1veyBBTkFMWVRJQ1NfRVZFTlRTIDogImdlbmVyYXRlcyI=)
 
 ### Table Design Decisions
 
@@ -229,176 +128,31 @@ erDiagram
 
 ### 1. User Registration Flow
 
-```mermaid
-sequenceDiagram
-    actor Client
-    participant Server
-    participant DB as PostgreSQL
-
-    Client->>Server: POST /api/v1/auth/register<br/>{ name, email, password }
-
-    Server->>Server: Validate fields (name, email, password)
-    Server->>Server: Validate email format (regex)
-    Server->>Server: Check password length >= 6
-
-    Server->>DB: SELECT * FROM users WHERE email = ?
-    DB-->>Server: null (user not found)
-
-    Server->>Server: bcrypt.genSalt(10)<br/>bcrypt.hash(password, salt)
-
-    Server->>DB: INSERT INTO users (name, email, password_hash)<br/>RETURNING id, name, email, role
-    DB-->>Server: { id: 1, name, email, role: 'member' }
-
-    Server->>Server: jwt.sign({ id, email, role }, SECRET, 7d)
-
-    Server-->>Client: 201 { token, user: { id, name, email } }
-```
+![Diagram](https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgICBhY3RvciBDbGllbnQKICAgIHBhcnRpY2lwYW50IFNlcnZlcgogICAgcGFydGljaXBhbnQgREIgYXMgUG9zdGdyZVNRTAoKICAgIENsaWVudC0+PlNlcnZlcjogUE9TVCAvYXBpL3YxL2F1dGgvcmVnaXN0ZXI8YnIvPnsgbmFtZSwgZW1haWwsIHBhc3N3b3JkIH0KCiAgICBTZXJ2ZXItPj5TZXJ2ZXI6IFZhbGlkYXRlIGZpZWxkcyAobmFtZSwgZW1haWwsIHBhc3N3b3JkKQogICAgU2VydmVyLT4+U2VydmVyOiBWYWxpZGF0ZSBlbWFpbCBmb3JtYXQgKHJlZ2V4KQogICAgU2VydmVyLT4+U2VydmVyOiBDaGVjayBwYXNzd29yZCBsZW5ndGggPj0gNgoKICAgIFNlcnZlci0+PkRCOiBTRUxFQ1QgKiBGUk9NIHVzZXJzIFdIRVJFIGVtYWlsID0gPwogICAgREItLT4+U2VydmVyOiBudWxsICh1c2VyIG5vdCBmb3VuZCkKCiAgICBTZXJ2ZXItPj5TZXJ2ZXI6IGJjcnlwdC5nZW5TYWx0KDEwKTxici8+YmNyeXB0Lmhhc2gocGFzc3dvcmQsIHNhbHQpCgogICAgU2VydmVyLT4+REI6IElOU0VSVCBJTlRPIHVzZXJzIChuYW1lLCBlbWFpbCwgcGFzc3dvcmRfaGFzaCk8YnIvPlJFVFVSTklORyBpZCwgbmFtZSwgZW1haWwsIHJvbGUKICAgIERCLS0+PlNlcnZlcjogeyBpZDogMSwgbmFtZSwgZW1haWwsIHJvbGU6ICdtZW1iZXInIH0KCiAgICBTZXJ2ZXItPj5TZXJ2ZXI6IGp3dC5zaWduKHsgaWQsIGVtYWlsLCByb2xlIH0sIFNFQ1JFVCwgN2QpCgogICAgU2VydmVyLS0+PkNsaWVudDogMjAxIHsgdG9rZW4sIHVzZXI6IHsgaWQsIG5hbWUsIGVtYWlsIH0gfQ==)
 
 ---
 
 ### 2. Authenticated Request Flow (Login then Create Booking)
 
-```mermaid
-sequenceDiagram
-    actor Client
-    participant Server
-    participant AuthMW as authMiddleware
-    participant Handler as Route Handler
-    participant DB as PostgreSQL
-    participant Redis
-
-    Note over Client,Redis: Step 1 - Login
-
-    Client->>Server: POST /api/v1/auth/login<br/>{ email, password }
-    Server->>DB: SELECT * FROM users WHERE email = ?
-    DB-->>Server: user row with password_hash
-    Server->>Server: bcrypt.compare(password, hash) OK
-    Server->>Server: jwt.sign({ id, email, role }, SECRET)
-    Server-->>Client: 200 { token: "eyJ..." }
-
-    Note over Client,Redis: Step 2 - Create Booking (token attached)
-
-    Client->>Server: POST /api/v1/bookings<br/>Authorization: Bearer eyJ...<br/>{ title, start, end }
-
-    Server->>AuthMW: Extract Bearer token
-    AuthMW->>AuthMW: jwt.verify(token, SECRET)
-    AuthMW->>AuthMW: Attach decoded payload to req.user
-    AuthMW->>Handler: next() OK
-
-    Handler->>Handler: Validate title, start, end present
-    Handler->>Handler: Check start is not in the past
-    Handler->>Handler: Check end is after start
-
-    Handler->>DB: INSERT INTO bookings (user_id, title, start_time, end_time)
-    DB-->>Handler: booking { id, title, start_time, end_time }
-
-    Handler->>Redis: emailQueue.add({ email, type: 'BOOKING_CONFIRMATION', data })
-    Note right of Redis: Fire and forget - no await
-
-    Handler->>DB: INSERT INTO notifications (user_id, type, title, message)
-    DB-->>Handler: notification created OK
-
-    Handler-->>Client: 201 { message: 'Booking created', booking }
-    Note over Client: Response received in ~50ms
-```
+![Diagram](https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgICBhY3RvciBDbGllbnQKICAgIHBhcnRpY2lwYW50IFNlcnZlcgogICAgcGFydGljaXBhbnQgQXV0aE1XIGFzIGF1dGhNaWRkbGV3YXJlCiAgICBwYXJ0aWNpcGFudCBIYW5kbGVyIGFzIFJvdXRlIEhhbmRsZXIKICAgIHBhcnRpY2lwYW50IERCIGFzIFBvc3RncmVTUUwKICAgIHBhcnRpY2lwYW50IFJlZGlzCgogICAgTm90ZSBvdmVyIENsaWVudCxSZWRpczogU3RlcCAxIC0gTG9naW4KCiAgICBDbGllbnQtPj5TZXJ2ZXI6IFBPU1QgL2FwaS92MS9hdXRoL2xvZ2luPGJyLz57IGVtYWlsLCBwYXNzd29yZCB9CiAgICBTZXJ2ZXItPj5EQjogU0VMRUNUICogRlJPTSB1c2VycyBXSEVSRSBlbWFpbCA9ID8KICAgIERCLS0+PlNlcnZlcjogdXNlciByb3cgd2l0aCBwYXNzd29yZF9oYXNoCiAgICBTZXJ2ZXItPj5TZXJ2ZXI6IGJjcnlwdC5jb21wYXJlKHBhc3N3b3JkLCBoYXNoKSBPSwogICAgU2VydmVyLT4+U2VydmVyOiBqd3Quc2lnbih7IGlkLCBlbWFpbCwgcm9sZSB9LCBTRUNSRVQpCiAgICBTZXJ2ZXItLT4+Q2xpZW50OiAyMDAgeyB0b2tlbjogImV5Si4uLiIgfQoKICAgIE5vdGUgb3ZlciBDbGllbnQsUmVkaXM6IFN0ZXAgMiAtIENyZWF0ZSBCb29raW5nICh0b2tlbiBhdHRhY2hlZCkKCiAgICBDbGllbnQtPj5TZXJ2ZXI6IFBPU1QgL2FwaS92MS9ib29raW5nczxici8+QXV0aG9yaXphdGlvbjogQmVhcmVyIGV5Si4uLjxici8+eyB0aXRsZSwgc3RhcnQsIGVuZCB9CgogICAgU2VydmVyLT4+QXV0aE1XOiBFeHRyYWN0IEJlYXJlciB0b2tlbgogICAgQXV0aE1XLT4+QXV0aE1XOiBqd3QudmVyaWZ5KHRva2VuLCBTRUNSRVQpCiAgICBBdXRoTVctPj5BdXRoTVc6IEF0dGFjaCBkZWNvZGVkIHBheWxvYWQgdG8gcmVxLnVzZXIKICAgIEF1dGhNVy0+PkhhbmRsZXI6IG5leHQoKSBPSwoKICAgIEhhbmRsZXItPj5IYW5kbGVyOiBWYWxpZGF0ZSB0aXRsZSwgc3RhcnQsIGVuZCBwcmVzZW50CiAgICBIYW5kbGVyLT4+SGFuZGxlcjogQ2hlY2sgc3RhcnQgaXMgbm90IGluIHRoZSBwYXN0CiAgICBIYW5kbGVyLT4+SGFuZGxlcjogQ2hlY2sgZW5kIGlzIGFmdGVyIHN0YXJ0CgogICAgSGFuZGxlci0+PkRCOiBJTlNFUlQgSU5UTyBib29raW5ncyAodXNlcl9pZCwgdGl0bGUsIHN0YXJ0X3RpbWUsIGVuZF90aW1lKQogICAgREItLT4+SGFuZGxlcjogYm9va2luZyB7IGlkLCB0aXRsZSwgc3RhcnRfdGltZSwgZW5kX3RpbWUgfQoKICAgIEhhbmRsZXItPj5SZWRpczogZW1haWxRdWV1ZS5hZGQoeyBlbWFpbCwgdHlwZTogJ0JPT0tJTkdfQ09ORklSTUFUSU9OJywgZGF0YSB9KQogICAgTm90ZSByaWdodCBvZiBSZWRpczogRmlyZSBhbmQgZm9yZ2V0IC0gbm8gYXdhaXQKCiAgICBIYW5kbGVyLT4+REI6IElOU0VSVCBJTlRPIG5vdGlmaWNhdGlvbnMgKHVzZXJfaWQsIHR5cGUsIHRpdGxlLCBtZXNzYWdlKQogICAgREItLT4+SGFuZGxlcjogbm90aWZpY2F0aW9uIGNyZWF0ZWQgT0sKCiAgICBIYW5kbGVyLS0+PkNsaWVudDogMjAxIHsgbWVzc2FnZTogJ0Jvb2tpbmcgY3JlYXRlZCcsIGJvb2tpbmcgfQogICAgTm90ZSBvdmVyIENsaWVudDogUmVzcG9uc2UgcmVjZWl2ZWQgaW4gfjUwbXM=)
 
 ---
 
 ### 3. Background Email Worker Flow
 
-```mermaid
-sequenceDiagram
-    participant Redis
-    participant Worker as worker.js
-    participant Templates as Email Templates
-    participant EmailAPI as Email Provider<br/>(Mock / SendGrid / Resend)
-
-    Note over Redis,EmailAPI: This runs in a SEPARATE process from server.js
-
-    Redis->>Worker: Job dequeued from 'emails' queue<br/>{ email, type: 'BOOKING_CONFIRMATION', data }
-
-    Worker->>Worker: emailQueue.process(async (job) => ...)
-    Worker->>Worker: Extract { email, type, data } from job.data
-
-    Worker->>Templates: templateFn = emailTemplates[type]
-    Templates-->>Worker: { subject: "Booking Confirmed: ...",<br/>body: "Hi there! Your booking..." }
-
-    Worker->>EmailAPI: sendEmail(to, subject, body)
-
-    alt EMAIL_PROVIDER = 'mock' (development)
-        EmailAPI->>EmailAPI: Simulate delay (1-3 seconds)
-        EmailAPI-->>Worker: { success: true, provider: 'mock' }
-        Note right of Worker: Logs to console
-    else EMAIL_PROVIDER = 'sendgrid' (production)
-        EmailAPI->>EmailAPI: POST to SendGrid API
-        EmailAPI-->>Worker: { success: true, provider: 'sendgrid' }
-    end
-
-    Worker->>Worker: emit 'completed' event OK
-
-    Note over Redis,Worker: If sendEmail() throws, Bull retries automatically (3 attempts)
-```
+![Diagram](https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBSZWRpcwogICAgcGFydGljaXBhbnQgV29ya2VyIGFzIHdvcmtlci5qcwogICAgcGFydGljaXBhbnQgVGVtcGxhdGVzIGFzIEVtYWlsIFRlbXBsYXRlcwogICAgcGFydGljaXBhbnQgRW1haWxBUEkgYXMgRW1haWwgUHJvdmlkZXI8YnIvPihNb2NrIC8gU2VuZEdyaWQgLyBSZXNlbmQpCgogICAgTm90ZSBvdmVyIFJlZGlzLEVtYWlsQVBJOiBUaGlzIHJ1bnMgaW4gYSBTRVBBUkFURSBwcm9jZXNzIGZyb20gc2VydmVyLmpzCgogICAgUmVkaXMtPj5Xb3JrZXI6IEpvYiBkZXF1ZXVlZCBmcm9tICdlbWFpbHMnIHF1ZXVlPGJyLz57IGVtYWlsLCB0eXBlOiAnQk9PS0lOR19DT05GSVJNQVRJT04nLCBkYXRhIH0KCiAgICBXb3JrZXItPj5Xb3JrZXI6IGVtYWlsUXVldWUucHJvY2Vzcyhhc3luYyAoam9iKSA9PiAuLi4pCiAgICBXb3JrZXItPj5Xb3JrZXI6IEV4dHJhY3QgeyBlbWFpbCwgdHlwZSwgZGF0YSB9IGZyb20gam9iLmRhdGEKCiAgICBXb3JrZXItPj5UZW1wbGF0ZXM6IHRlbXBsYXRlRm4gPSBlbWFpbFRlbXBsYXRlc1t0eXBlXQogICAgVGVtcGxhdGVzLS0+PldvcmtlcjogeyBzdWJqZWN0OiAiQm9va2luZyBDb25maXJtZWQ6IC4uLiIsPGJyLz5ib2R5OiAiSGkgdGhlcmUhIFlvdXIgYm9va2luZy4uLiIgfQoKICAgIFdvcmtlci0+PkVtYWlsQVBJOiBzZW5kRW1haWwodG8sIHN1YmplY3QsIGJvZHkpCgogICAgYWx0IEVNQUlMX1BST1ZJREVSID0gJ21vY2snIChkZXZlbG9wbWVudCkKICAgICAgICBFbWFpbEFQSS0+PkVtYWlsQVBJOiBTaW11bGF0ZSBkZWxheSAoMS0zIHNlY29uZHMpCiAgICAgICAgRW1haWxBUEktLT4+V29ya2VyOiB7IHN1Y2Nlc3M6IHRydWUsIHByb3ZpZGVyOiAnbW9jaycgfQogICAgICAgIE5vdGUgcmlnaHQgb2YgV29ya2VyOiBMb2dzIHRvIGNvbnNvbGUKICAgIGVsc2UgRU1BSUxfUFJPVklERVIgPSAnc2VuZGdyaWQnIChwcm9kdWN0aW9uKQogICAgICAgIEVtYWlsQVBJLT4+RW1haWxBUEk6IFBPU1QgdG8gU2VuZEdyaWQgQVBJCiAgICAgICAgRW1haWxBUEktLT4+V29ya2VyOiB7IHN1Y2Nlc3M6IHRydWUsIHByb3ZpZGVyOiAnc2VuZGdyaWQnIH0KICAgIGVuZAoKICAgIFdvcmtlci0+PldvcmtlcjogZW1pdCAnY29tcGxldGVkJyBldmVudCBPSwoKICAgIE5vdGUgb3ZlciBSZWRpcyxXb3JrZXI6IElmIHNlbmRFbWFpbCgpIHRocm93cywgQnVsbCByZXRyaWVzIGF1dG9tYXRpY2FsbHkgKDMgYXR0ZW1wdHMp)
 
 ---
 
 ### 4. Organization Member Invite Flow
 
-```mermaid
-sequenceDiagram
-    actor Owner
-    participant Server
-    participant DB as PostgreSQL
-    participant Notifications as Notification System
-
-    Owner->>Server: POST /api/v1/organizations/:id/members<br/>{ email: "newmember@example.com", role: "member" }
-
-    Server->>Server: authMiddleware - verify Owner's JWT
-
-    Server->>DB: SELECT * FROM organizations WHERE id = ?
-    DB-->>Server: org { id, name, owner_id }
-
-    Server->>Server: Check org.owner_id === req.user.id
-    Note right of Server: 403 Forbidden if not owner
-
-    Server->>DB: SELECT * FROM users WHERE email = 'newmember@example.com'
-    DB-->>Server: userToAdd { id, name, email }
-
-    Server->>DB: INSERT INTO organization_members<br/>(organization_id, user_id, role)<br/>ON CONFLICT returns null (already member check)
-    DB-->>Server: member record OK
-
-    Server->>Notifications: NotificationModel.create(<br/>userToAdd.id,<br/>'ORG_INVITE',<br/>'You have been added to TeamName',<br/>metadata: { organization_id }<br/>)
-    Notifications->>DB: INSERT INTO notifications
-    DB-->>Notifications: OK
-
-    Server-->>Owner: 201 { message: 'Member added', member }
-
-    Note over DB,Notifications: New member sees notification<br/>on their next request to /notifications/unread
-```
+![Diagram](https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgICBhY3RvciBPd25lcgogICAgcGFydGljaXBhbnQgU2VydmVyCiAgICBwYXJ0aWNpcGFudCBEQiBhcyBQb3N0Z3JlU1FMCiAgICBwYXJ0aWNpcGFudCBOb3RpZmljYXRpb25zIGFzIE5vdGlmaWNhdGlvbiBTeXN0ZW0KCiAgICBPd25lci0+PlNlcnZlcjogUE9TVCAvYXBpL3YxL29yZ2FuaXphdGlvbnMvOmlkL21lbWJlcnM8YnIvPnsgZW1haWw6ICJuZXdtZW1iZXJAZXhhbXBsZS5jb20iLCByb2xlOiAibWVtYmVyIiB9CgogICAgU2VydmVyLT4+U2VydmVyOiBhdXRoTWlkZGxld2FyZSAtIHZlcmlmeSBPd25lcidzIEpXVAoKICAgIFNlcnZlci0+PkRCOiBTRUxFQ1QgKiBGUk9NIG9yZ2FuaXphdGlvbnMgV0hFUkUgaWQgPSA/CiAgICBEQi0tPj5TZXJ2ZXI6IG9yZyB7IGlkLCBuYW1lLCBvd25lcl9pZCB9CgogICAgU2VydmVyLT4+U2VydmVyOiBDaGVjayBvcmcub3duZXJfaWQgPT09IHJlcS51c2VyLmlkCiAgICBOb3RlIHJpZ2h0IG9mIFNlcnZlcjogNDAzIEZvcmJpZGRlbiBpZiBub3Qgb3duZXIKCiAgICBTZXJ2ZXItPj5EQjogU0VMRUNUICogRlJPTSB1c2VycyBXSEVSRSBlbWFpbCA9ICduZXdtZW1iZXJAZXhhbXBsZS5jb20nCiAgICBEQi0tPj5TZXJ2ZXI6IHVzZXJUb0FkZCB7IGlkLCBuYW1lLCBlbWFpbCB9CgogICAgU2VydmVyLT4+REI6IElOU0VSVCBJTlRPIG9yZ2FuaXphdGlvbl9tZW1iZXJzPGJyLz4ob3JnYW5pemF0aW9uX2lkLCB1c2VyX2lkLCByb2xlKTxici8+T04gQ09ORkxJQ1QgcmV0dXJucyBudWxsIChhbHJlYWR5IG1lbWJlciBjaGVjaykKICAgIERCLS0+PlNlcnZlcjogbWVtYmVyIHJlY29yZCBPSwoKICAgIFNlcnZlci0+Pk5vdGlmaWNhdGlvbnM6IE5vdGlmaWNhdGlvbk1vZGVsLmNyZWF0ZSg8YnIvPnVzZXJUb0FkZC5pZCw8YnIvPidPUkdfSU5WSVRFJyw8YnIvPidZb3UgaGF2ZSBiZWVuIGFkZGVkIHRvIFRlYW1OYW1lJyw8YnIvPm1ldGFkYXRhOiB7IG9yZ2FuaXphdGlvbl9pZCB9PGJyLz4pCiAgICBOb3RpZmljYXRpb25zLT4+REI6IElOU0VSVCBJTlRPIG5vdGlmaWNhdGlvbnMKICAgIERCLS0+Pk5vdGlmaWNhdGlvbnM6IE9LCgogICAgU2VydmVyLS0+Pk93bmVyOiAyMDEgeyBtZXNzYWdlOiAnTWVtYmVyIGFkZGVkJywgbWVtYmVyIH0KCiAgICBOb3RlIG92ZXIgREIsTm90aWZpY2F0aW9uczogTmV3IG1lbWJlciBzZWVzIG5vdGlmaWNhdGlvbjxici8+b24gdGhlaXIgbmV4dCByZXF1ZXN0IHRvIC9ub3RpZmljYXRpb25zL3VucmVhZA==)
 
 ---
 
 ### 5. Analytics Dashboard Query Flow
 
-```mermaid
-flowchart TD
-    A["GET /api/v1/analytics/dashboard?days=30"] --> B["authMiddleware\nVerify JWT"]
-    B --> C["Parse ?days query param\nDefault: 30"]
-    C --> D["Promise.all - fire both queries simultaneously"]
-
-    D --> E["getDashboardSummary(30)\nSELECT event_type, COUNT, unique_users\nFROM analytics_events\nWHERE created_at >= NOW() - 30 days\nGROUP BY event_type"]
-
-    D --> F["getQuickStats(30)\nSELECT total_events,\nunique_users, event_types\nFROM analytics_events\nWHERE created_at >= NOW() - 30 days"]
-
-    E --> G["Merge Results"]
-    F --> G
-
-    G --> H["200 Response\n{ period, overview, breakdown }"]
-
-    style D fill:#1a1a2e,color:#fff
-    style E fill:#16213e,color:#fff
-    style F fill:#16213e,color:#fff
-    style G fill:#0f3460,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBBWyJHRVQgL2FwaS92MS9hbmFseXRpY3MvZGFzaGJvYXJkP2RheXM9MzAiXSAtLT4gQlsiYXV0aE1pZGRsZXdhcmVcblZlcmlmeSBKV1QiXQogICAgQiAtLT4gQ1siUGFyc2UgP2RheXMgcXVlcnkgcGFyYW1cbkRlZmF1bHQ6IDMwIl0KICAgIEMgLS0+IERbIlByb21pc2UuYWxsIC0gZmlyZSBib3RoIHF1ZXJpZXMgc2ltdWx0YW5lb3VzbHkiXQoKICAgIEQgLS0+IEVbImdldERhc2hib2FyZFN1bW1hcnkoMzApXG5TRUxFQ1QgZXZlbnRfdHlwZSwgQ09VTlQsIHVuaXF1ZV91c2Vyc1xuRlJPTSBhbmFseXRpY3NfZXZlbnRzXG5XSEVSRSBjcmVhdGVkX2F0ID49IE5PVygpIC0gMzAgZGF5c1xuR1JPVVAgQlkgZXZlbnRfdHlwZSJdCgogICAgRCAtLT4gRlsiZ2V0UXVpY2tTdGF0cygzMClcblNFTEVDVCB0b3RhbF9ldmVudHMsXG51bmlxdWVfdXNlcnMsIGV2ZW50X3R5cGVzXG5GUk9NIGFuYWx5dGljc19ldmVudHNcbldIRVJFIGNyZWF0ZWRfYXQgPj0gTk9XKCkgLSAzMCBkYXlzIl0KCiAgICBFIC0tPiBHWyJNZXJnZSBSZXN1bHRzIl0KICAgIEYgLS0+IEcKCiAgICBHIC0tPiBIWyIyMDAgUmVzcG9uc2VcbnsgcGVyaW9kLCBvdmVydmlldywgYnJlYWtkb3duIH0iXQoKICAgIHN0eWxlIEQgZmlsbDojMWExYTJlLGNvbG9yOiNmZmYKICAgIHN0eWxlIEUgZmlsbDojMTYyMTNlLGNvbG9yOiNmZmYKICAgIHN0eWxlIEYgZmlsbDojMTYyMTNlLGNvbG9yOiNmZmYKICAgIHN0eWxlIEcgZmlsbDojMGYzNDYwLGNvbG9yOiNmZmY=)
 
 ---
 
@@ -406,50 +160,7 @@ flowchart TD
 
 Every HTTP request passes through this **ordered pipeline** before reaching a route handler:
 
-```mermaid
-flowchart TD
-    Req["Incoming HTTP Request"] --> H
-
-    H["Helmet\nSets 11 security headers\nXSS-Protection, HSTS, CSP\nX-Frame-Options, MIME sniff block"]
-    H --> C
-
-    C["CORS\nControls allowed origins\nIn prod: restrict to your-frontend.com"]
-    C --> M
-
-    M["Morgan\nLogs every request:\nGET /api/v1/users 200 34ms"]
-    M --> J
-
-    J["express.json()\nParses request body\nreq.body = { title, start, end }"]
-    J --> Decision
-
-    Decision{{"Is route\nprotected?"}}
-    Decision -- Yes --> AM
-    Decision -- No --> RH
-
-    AM["authMiddleware\nExtract Bearer token\njwt.verify(token, SECRET)\nAttach req.user = { id, email, role }"]
-    AM -- "Invalid" --> E401["401 Unauthorized"]
-    AM -- "Valid" --> RM
-
-    RM{"Role check\nrequired?"}
-    RM -- Yes --> RoleMW
-    RM -- No --> RH
-
-    RoleMW["roleMiddleware('admin')\nCheck req.user.role in allowedRoles"]
-    RoleMW -- "Wrong role" --> E403["403 Forbidden"]
-    RoleMW -- "Allowed" --> RH
-
-    RH["Route Handler\nValidation then Model then DB\nBusiness Logic"]
-    RH -- "Success" --> Res["JSON Response"]
-    RH -- "Error thrown" --> EH
-
-    EH["Global Error Handler\nLogs full stack trace (dev only)\nReturns clean { error } JSON"]
-
-    style Req fill:#2d6a4f,color:#fff
-    style Res fill:#2d6a4f,color:#fff
-    style E401 fill:#c1121f,color:#fff
-    style E403 fill:#c1121f,color:#fff
-    style EH fill:#c1121f,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBSZXFbIkluY29taW5nIEhUVFAgUmVxdWVzdCJdIC0tPiBICgogICAgSFsiSGVsbWV0XG5TZXRzIDExIHNlY3VyaXR5IGhlYWRlcnNcblhTUy1Qcm90ZWN0aW9uLCBIU1RTLCBDU1BcblgtRnJhbWUtT3B0aW9ucywgTUlNRSBzbmlmZiBibG9jayJdCiAgICBIIC0tPiBDCgogICAgQ1siQ09SU1xuQ29udHJvbHMgYWxsb3dlZCBvcmlnaW5zXG5JbiBwcm9kOiByZXN0cmljdCB0byB5b3VyLWZyb250ZW5kLmNvbSJdCiAgICBDIC0tPiBNCgogICAgTVsiTW9yZ2FuXG5Mb2dzIGV2ZXJ5IHJlcXVlc3Q6XG5HRVQgL2FwaS92MS91c2VycyAyMDAgMzRtcyJdCiAgICBNIC0tPiBKCgogICAgSlsiZXhwcmVzcy5qc29uKClcblBhcnNlcyByZXF1ZXN0IGJvZHlcbnJlcS5ib2R5ID0geyB0aXRsZSwgc3RhcnQsIGVuZCB9Il0KICAgIEogLS0+IERlY2lzaW9uCgogICAgRGVjaXNpb257eyJJcyByb3V0ZVxucHJvdGVjdGVkPyJ9fQogICAgRGVjaXNpb24gLS0gWWVzIC0tPiBBTQogICAgRGVjaXNpb24gLS0gTm8gLS0+IFJICgogICAgQU1bImF1dGhNaWRkbGV3YXJlXG5FeHRyYWN0IEJlYXJlciB0b2tlblxuand0LnZlcmlmeSh0b2tlbiwgU0VDUkVUKVxuQXR0YWNoIHJlcS51c2VyID0geyBpZCwgZW1haWwsIHJvbGUgfSJdCiAgICBBTSAtLSAiSW52YWxpZCIgLS0+IEU0MDFbIjQwMSBVbmF1dGhvcml6ZWQiXQogICAgQU0gLS0gIlZhbGlkIiAtLT4gUk0KCiAgICBSTXsiUm9sZSBjaGVja1xucmVxdWlyZWQ/In0KICAgIFJNIC0tIFllcyAtLT4gUm9sZU1XCiAgICBSTSAtLSBObyAtLT4gUkgKCiAgICBSb2xlTVdbInJvbGVNaWRkbGV3YXJlKCdhZG1pbicpXG5DaGVjayByZXEudXNlci5yb2xlIGluIGFsbG93ZWRSb2xlcyJdCiAgICBSb2xlTVcgLS0gIldyb25nIHJvbGUiIC0tPiBFNDAzWyI0MDMgRm9yYmlkZGVuIl0KICAgIFJvbGVNVyAtLSAiQWxsb3dlZCIgLS0+IFJICgogICAgUkhbIlJvdXRlIEhhbmRsZXJcblZhbGlkYXRpb24gdGhlbiBNb2RlbCB0aGVuIERCXG5CdXNpbmVzcyBMb2dpYyJdCiAgICBSSCAtLSAiU3VjY2VzcyIgLS0+IFJlc1siSlNPTiBSZXNwb25zZSJdCiAgICBSSCAtLSAiRXJyb3IgdGhyb3duIiAtLT4gRUgKCiAgICBFSFsiR2xvYmFsIEVycm9yIEhhbmRsZXJcbkxvZ3MgZnVsbCBzdGFjayB0cmFjZSAoZGV2IG9ubHkpXG5SZXR1cm5zIGNsZWFuIHsgZXJyb3IgfSBKU09OIl0KCiAgICBzdHlsZSBSZXEgZmlsbDojMmQ2YTRmLGNvbG9yOiNmZmYKICAgIHN0eWxlIFJlcyBmaWxsOiMyZDZhNGYsY29sb3I6I2ZmZgogICAgc3R5bGUgRTQwMSBmaWxsOiNjMTEyMWYsY29sb3I6I2ZmZgogICAgc3R5bGUgRTQwMyBmaWxsOiNjMTEyMWYsY29sb3I6I2ZmZgogICAgc3R5bGUgRUggZmlsbDojYzExMjFmLGNvbG9yOiNmZmY=)
 
 ---
 
@@ -457,38 +168,7 @@ flowchart TD
 
 ### How JWT Authentication Works
 
-```mermaid
-flowchart LR
-    subgraph Registration ["Registration"]
-        R1["Receive name, email, password"]
-        R2["Validate input"]
-        R3["bcrypt.hash password\nsalt rounds = 10"]
-        R4["INSERT INTO users"]
-        R5["jwt.sign payload\nexpires in 7 days"]
-        R1 --> R2 --> R3 --> R4 --> R5
-    end
-
-    subgraph Token ["JWT Token"]
-        T1["Header\n{ alg: HS256 }"]
-        T2["Payload\n{ id, email, role\niat, exp }"]
-        T3["Signature\nHMAC-SHA256(header.payload, SECRET)"]
-    end
-
-    subgraph ProtectedReq ["Protected Request"]
-        P1["Client sends:\nAuthorization: Bearer eyJ..."]
-        P2["jwt.verify(token, SECRET)"]
-        P3["Decode payload\nreq.user = { id, email, role }"]
-        P4["Route executes\nwith user context"]
-        P1 --> P2 --> P3 --> P4
-    end
-
-    R5 --> Token
-    Token -->|"Stored by client\n(localStorage / cookie)"| P1
-
-    style Registration fill:#1a1a2e,color:#fff
-    style Token fill:#16213e,color:#fff
-    style ProtectedReq fill:#0f3460,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IExSCiAgICBzdWJncmFwaCBSZWdpc3RyYXRpb24gWyJSZWdpc3RyYXRpb24iXQogICAgICAgIFIxWyJSZWNlaXZlIG5hbWUsIGVtYWlsLCBwYXNzd29yZCJdCiAgICAgICAgUjJbIlZhbGlkYXRlIGlucHV0Il0KICAgICAgICBSM1siYmNyeXB0Lmhhc2ggcGFzc3dvcmRcbnNhbHQgcm91bmRzID0gMTAiXQogICAgICAgIFI0WyJJTlNFUlQgSU5UTyB1c2VycyJdCiAgICAgICAgUjVbImp3dC5zaWduIHBheWxvYWRcbmV4cGlyZXMgaW4gNyBkYXlzIl0KICAgICAgICBSMSAtLT4gUjIgLS0+IFIzIC0tPiBSNCAtLT4gUjUKICAgIGVuZAoKICAgIHN1YmdyYXBoIFRva2VuIFsiSldUIFRva2VuIl0KICAgICAgICBUMVsiSGVhZGVyXG57IGFsZzogSFMyNTYgfSJdCiAgICAgICAgVDJbIlBheWxvYWRcbnsgaWQsIGVtYWlsLCByb2xlXG5pYXQsIGV4cCB9Il0KICAgICAgICBUM1siU2lnbmF0dXJlXG5ITUFDLVNIQTI1NihoZWFkZXIucGF5bG9hZCwgU0VDUkVUKSJdCiAgICBlbmQKCiAgICBzdWJncmFwaCBQcm90ZWN0ZWRSZXEgWyJQcm90ZWN0ZWQgUmVxdWVzdCJdCiAgICAgICAgUDFbIkNsaWVudCBzZW5kczpcbkF1dGhvcml6YXRpb246IEJlYXJlciBleUouLi4iXQogICAgICAgIFAyWyJqd3QudmVyaWZ5KHRva2VuLCBTRUNSRVQpIl0KICAgICAgICBQM1siRGVjb2RlIHBheWxvYWRcbnJlcS51c2VyID0geyBpZCwgZW1haWwsIHJvbGUgfSJdCiAgICAgICAgUDRbIlJvdXRlIGV4ZWN1dGVzXG53aXRoIHVzZXIgY29udGV4dCJdCiAgICAgICAgUDEgLS0+IFAyIC0tPiBQMyAtLT4gUDQKICAgIGVuZAoKICAgIFI1IC0tPiBUb2tlbgogICAgVG9rZW4gLS0+fCJTdG9yZWQgYnkgY2xpZW50XG4obG9jYWxTdG9yYWdlIC8gY29va2llKSJ8IFAxCgogICAgc3R5bGUgUmVnaXN0cmF0aW9uIGZpbGw6IzFhMWEyZSxjb2xvcjojZmZmCiAgICBzdHlsZSBUb2tlbiBmaWxsOiMxNjIxM2UsY29sb3I6I2ZmZgogICAgc3R5bGUgUHJvdGVjdGVkUmVxIGZpbGw6IzBmMzQ2MCxjb2xvcjojZmZm)
 
 ### Why Stateless JWT vs Sessions?
 
@@ -506,53 +186,13 @@ flowchart LR
 
 ### The Problem with Synchronous Email
 
-```mermaid
-flowchart TD
-    subgraph BAD ["Synchronous - Blocking the HTTP Thread"]
-        B1["Client sends POST /bookings"]
-        B2["Save booking to DB\n~10ms"]
-        B3["Call SendGrid API\nWait for response...\n1,000-5,000ms"]
-        B4["Create notification\n~5ms"]
-        B5["Respond to client\nTotal: ~5 seconds"]
-        B1 --> B2 --> B3 --> B4 --> B5
-    end
-
-    subgraph GOOD ["Asynchronous - Fire and Forget"]
-        G1["Client sends POST /bookings"]
-        G2["Save booking to DB\n~10ms"]
-        G3["emailQueue.add(job)\nDrops job in Redis\n~2ms"]
-        G4["Create notification\n~5ms"]
-        G5["Respond to client\nTotal: ~50ms"]
-        G6["(Background)\nWorker picks up job\nSendGrid API called\nEmail delivered"]
-        G1 --> G2 --> G3 --> G4 --> G5
-        G3 -.->|"Async"| G6
-    end
-
-    style BAD fill:#3d0000,color:#fff
-    style GOOD fill:#003d00,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBzdWJncmFwaCBCQUQgWyJTeW5jaHJvbm91cyAtIEJsb2NraW5nIHRoZSBIVFRQIFRocmVhZCJdCiAgICAgICAgQjFbIkNsaWVudCBzZW5kcyBQT1NUIC9ib29raW5ncyJdCiAgICAgICAgQjJbIlNhdmUgYm9va2luZyB0byBEQlxufjEwbXMiXQogICAgICAgIEIzWyJDYWxsIFNlbmRHcmlkIEFQSVxuV2FpdCBmb3IgcmVzcG9uc2UuLi5cbjEsMDAwLTUsMDAwbXMiXQogICAgICAgIEI0WyJDcmVhdGUgbm90aWZpY2F0aW9uXG5+NW1zIl0KICAgICAgICBCNVsiUmVzcG9uZCB0byBjbGllbnRcblRvdGFsOiB+NSBzZWNvbmRzIl0KICAgICAgICBCMSAtLT4gQjIgLS0+IEIzIC0tPiBCNCAtLT4gQjUKICAgIGVuZAoKICAgIHN1YmdyYXBoIEdPT0QgWyJBc3luY2hyb25vdXMgLSBGaXJlIGFuZCBGb3JnZXQiXQogICAgICAgIEcxWyJDbGllbnQgc2VuZHMgUE9TVCAvYm9va2luZ3MiXQogICAgICAgIEcyWyJTYXZlIGJvb2tpbmcgdG8gREJcbn4xMG1zIl0KICAgICAgICBHM1siZW1haWxRdWV1ZS5hZGQoam9iKVxuRHJvcHMgam9iIGluIFJlZGlzXG5+Mm1zIl0KICAgICAgICBHNFsiQ3JlYXRlIG5vdGlmaWNhdGlvblxufjVtcyJdCiAgICAgICAgRzVbIlJlc3BvbmQgdG8gY2xpZW50XG5Ub3RhbDogfjUwbXMiXQogICAgICAgIEc2WyIoQmFja2dyb3VuZClcbldvcmtlciBwaWNrcyB1cCBqb2JcblNlbmRHcmlkIEFQSSBjYWxsZWRcbkVtYWlsIGRlbGl2ZXJlZCJdCiAgICAgICAgRzEgLS0+IEcyIC0tPiBHMyAtLT4gRzQgLS0+IEc1CiAgICAgICAgRzMgLS4tPnwiQXN5bmMifCBHNgogICAgZW5kCgogICAgc3R5bGUgQkFEIGZpbGw6IzNkMDAwMCxjb2xvcjojZmZmCiAgICBzdHlsZSBHT09EIGZpbGw6IzAwM2QwMCxjb2xvcjojZmZm)
 
 ### Bull Queue - Three Redis Connections
 
 When connecting to cloud Redis (Upstash), Bull internally creates **3 separate Redis connections** for different purposes. Each must be configured identically with TLS settings:
 
-```mermaid
-graph TD
-    Bull["Bull Queue\nemailQueue"] --> C1
-    Bull --> C2
-    Bull --> C3
-
-    C1["Connection 1: client\nSends commands\nnew Redis(REDIS_URL, config)"]
-    C2["Connection 2: subscriber\nListens for pub/sub events\nnew Redis(REDIS_URL, config)"]
-    C3["Connection 3: bclient\nBlocking client for job polling\nnew Redis(REDIS_URL, config)"]
-
-    C1 --> RedisDB[("Redis\nUpstash Cloud\nTLS rediss://")]
-    C2 --> RedisDB
-    C3 --> RedisDB
-
-    style RedisDB fill:#c1121f,color:#fff
-    style Bull fill:#1a1a2e,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Z3JhcGggVEQKICAgIEJ1bGxbIkJ1bGwgUXVldWVcbmVtYWlsUXVldWUiXSAtLT4gQzEKICAgIEJ1bGwgLS0+IEMyCiAgICBCdWxsIC0tPiBDMwoKICAgIEMxWyJDb25uZWN0aW9uIDE6IGNsaWVudFxuU2VuZHMgY29tbWFuZHNcbm5ldyBSZWRpcyhSRURJU19VUkwsIGNvbmZpZykiXQogICAgQzJbIkNvbm5lY3Rpb24gMjogc3Vic2NyaWJlclxuTGlzdGVucyBmb3IgcHViL3N1YiBldmVudHNcbm5ldyBSZWRpcyhSRURJU19VUkwsIGNvbmZpZykiXQogICAgQzNbIkNvbm5lY3Rpb24gMzogYmNsaWVudFxuQmxvY2tpbmcgY2xpZW50IGZvciBqb2IgcG9sbGluZ1xubmV3IFJlZGlzKFJFRElTX1VSTCwgY29uZmlnKSJdCgogICAgQzEgLS0+IFJlZGlzREJbKCJSZWRpc1xuVXBzdGFzaCBDbG91ZFxuVExTIHJlZGlzczovLyIpXQogICAgQzIgLS0+IFJlZGlzREIKICAgIEMzIC0tPiBSZWRpc0RCCgogICAgc3R5bGUgUmVkaXNEQiBmaWxsOiNjMTEyMWYsY29sb3I6I2ZmZgogICAgc3R5bGUgQnVsbCBmaWxsOiMxYTFhMmUsY29sb3I6I2ZmZg==)
 
 ```javascript
 // The createClient pattern - ensures ALL 3 connections use TLS:
@@ -635,28 +275,7 @@ All routes are prefixed with `/api/v1/`. `[auth]` = requires JWT, `[admin]` = ad
 
 Opening a raw connection per request involves a full TCP handshake + SSL + auth challenge every time. That costs ~200ms. We keep **10 connections alive permanently** and share them across requests:
 
-```mermaid
-flowchart LR
-    subgraph Pool ["pg.Pool - 10 Persistent Connections"]
-        C1["Conn 1"]
-        C2["Conn 2"]
-        C3["Conn 3"]
-        CD["..."]
-        C10["Conn 10"]
-    end
-
-    R1["Request A"] -->|"borrow"| C1
-    R2["Request B"] -->|"borrow"| C2
-    R3["Request C"] -->|"borrow"| C3
-
-    C1 -->|"return after query"| Pool
-    C2 -->|"return after query"| Pool
-
-    Pool <-->|"Persistent TCP + SSL"| DB[("PostgreSQL")]
-
-    style Pool fill:#1a1a2e,color:#fff
-    style DB fill:#2d6a4f,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IExSCiAgICBzdWJncmFwaCBQb29sIFsicGcuUG9vbCAtIDEwIFBlcnNpc3RlbnQgQ29ubmVjdGlvbnMiXQogICAgICAgIEMxWyJDb25uIDEiXQogICAgICAgIEMyWyJDb25uIDIiXQogICAgICAgIEMzWyJDb25uIDMiXQogICAgICAgIENEWyIuLi4iXQogICAgICAgIEMxMFsiQ29ubiAxMCJdCiAgICBlbmQKCiAgICBSMVsiUmVxdWVzdCBBIl0gLS0+fCJib3Jyb3cifCBDMQogICAgUjJbIlJlcXVlc3QgQiJdIC0tPnwiYm9ycm93InwgQzIKICAgIFIzWyJSZXF1ZXN0IEMiXSAtLT58ImJvcnJvdyJ8IEMzCgogICAgQzEgLS0+fCJyZXR1cm4gYWZ0ZXIgcXVlcnkifCBQb29sCiAgICBDMiAtLT58InJldHVybiBhZnRlciBxdWVyeSJ8IFBvb2wKCiAgICBQb29sIDwtLT58IlBlcnNpc3RlbnQgVENQICsgU1NMInwgREJbKCJQb3N0Z3JlU1FMIildCgogICAgc3R5bGUgUG9vbCBmaWxsOiMxYTFhMmUsY29sb3I6I2ZmZgogICAgc3R5bGUgREIgZmlsbDojMmQ2YTRmLGNvbG9yOiNmZmY=)
 
 **Result:** `~2ms` connection overhead vs `~200ms` without pooling.
 
@@ -678,19 +297,7 @@ Both `analytics_events` and `notifications` store a `metadata JSONB` column. Thi
 
 ### 3. Strategic Database Indexes
 
-```mermaid
-flowchart LR
-    subgraph NoIndex ["No Index - Full Table Scan"]
-        NI["SELECT * FROM analytics_events\nWHERE event_type = 'LOGIN'\n\nPostgres reads EVERY row\nO(n) - slow at scale"]
-    end
-
-    subgraph WithIndex ["With Index - B-Tree Lookup"]
-        WI["CREATE INDEX idx_analytics_event_type\nON analytics_events(event_type)\n\nPostgres jumps directly to matches\nO(log n) - fast at any scale"]
-    end
-
-    style NoIndex fill:#3d0000,color:#fff
-    style WithIndex fill:#003d00,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IExSCiAgICBzdWJncmFwaCBOb0luZGV4IFsiTm8gSW5kZXggLSBGdWxsIFRhYmxlIFNjYW4iXQogICAgICAgIE5JWyJTRUxFQ1QgKiBGUk9NIGFuYWx5dGljc19ldmVudHNcbldIRVJFIGV2ZW50X3R5cGUgPSAnTE9HSU4nXG5cblBvc3RncmVzIHJlYWRzIEVWRVJZIHJvd1xuTyhuKSAtIHNsb3cgYXQgc2NhbGUiXQogICAgZW5kCgogICAgc3ViZ3JhcGggV2l0aEluZGV4IFsiV2l0aCBJbmRleCAtIEItVHJlZSBMb29rdXAiXQogICAgICAgIFdJWyJDUkVBVEUgSU5ERVggaWR4X2FuYWx5dGljc19ldmVudF90eXBlXG5PTiBhbmFseXRpY3NfZXZlbnRzKGV2ZW50X3R5cGUpXG5cblBvc3RncmVzIGp1bXBzIGRpcmVjdGx5IHRvIG1hdGNoZXNcbk8obG9nIG4pIC0gZmFzdCBhdCBhbnkgc2NhbGUiXQogICAgZW5kCgogICAgc3R5bGUgTm9JbmRleCBmaWxsOiMzZDAwMDAsY29sb3I6I2ZmZgogICAgc3R5bGUgV2l0aEluZGV4IGZpbGw6IzAwM2QwMCxjb2xvcjojZmZm)
 
 Indexes applied:
 ```sql
@@ -707,24 +314,7 @@ CREATE INDEX idx_notifications_user_unread ON notifications(user_id, is_read);
 
 ### 4. Parallel Database Queries with `Promise.all()`
 
-```mermaid
-sequenceDiagram
-    participant Handler as Route Handler
-    participant DB as PostgreSQL
-
-    Note over Handler,DB: Sequential - 2x the time
-    Handler->>DB: getDashboardSummary()
-    DB-->>Handler: result (50ms)
-    Handler->>DB: getQuickStats()
-    DB-->>Handler: result (50ms)
-    Note right of Handler: Total: ~100ms
-
-    Note over Handler,DB: Parallel with Promise.all()
-    Handler->>DB: getDashboardSummary()
-    Handler->>DB: getQuickStats()
-    DB-->>Handler: both results arrive concurrently
-    Note right of Handler: Total: ~50ms
-```
+![Diagram](https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBIYW5kbGVyIGFzIFJvdXRlIEhhbmRsZXIKICAgIHBhcnRpY2lwYW50IERCIGFzIFBvc3RncmVTUUwKCiAgICBOb3RlIG92ZXIgSGFuZGxlcixEQjogU2VxdWVudGlhbCAtIDJ4IHRoZSB0aW1lCiAgICBIYW5kbGVyLT4+REI6IGdldERhc2hib2FyZFN1bW1hcnkoKQogICAgREItLT4+SGFuZGxlcjogcmVzdWx0ICg1MG1zKQogICAgSGFuZGxlci0+PkRCOiBnZXRRdWlja1N0YXRzKCkKICAgIERCLS0+PkhhbmRsZXI6IHJlc3VsdCAoNTBtcykKICAgIE5vdGUgcmlnaHQgb2YgSGFuZGxlcjogVG90YWw6IH4xMDBtcwoKICAgIE5vdGUgb3ZlciBIYW5kbGVyLERCOiBQYXJhbGxlbCB3aXRoIFByb21pc2UuYWxsKCkKICAgIEhhbmRsZXItPj5EQjogZ2V0RGFzaGJvYXJkU3VtbWFyeSgpCiAgICBIYW5kbGVyLT4+REI6IGdldFF1aWNrU3RhdHMoKQogICAgREItLT4+SGFuZGxlcjogYm90aCByZXN1bHRzIGFycml2ZSBjb25jdXJyZW50bHkKICAgIE5vdGUgcmlnaHQgb2YgSGFuZGxlcjogVG90YWw6IH41MG1z)
 
 ---
 
@@ -765,17 +355,7 @@ RETURNING *;
 
 The email system is designed so the **provider is swappable** with zero code changes - only an environment variable update:
 
-```mermaid
-flowchart TD
-    Worker["worker.js\nreads emailConfig.provider"] --> Decision{{"EMAIL_PROVIDER\nenv variable"}}
-    Decision -- "mock" --> Mock["Console.log\nSimulate 1-3s delay\nDevelopment only"]
-    Decision -- "sendgrid" --> SG["@sendgrid/mail SDK\nProduction"]
-    Decision -- "resend" --> Resend["resend SDK\nProduction"]
-
-    style Mock fill:#1a1a2e,color:#fff
-    style SG fill:#0f3460,color:#fff
-    style Resend fill:#16213e,color:#fff
-```
+![Diagram](https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBXb3JrZXJbIndvcmtlci5qc1xucmVhZHMgZW1haWxDb25maWcucHJvdmlkZXIiXSAtLT4gRGVjaXNpb257eyJFTUFJTF9QUk9WSURFUlxuZW52IHZhcmlhYmxlIn19CiAgICBEZWNpc2lvbiAtLSAibW9jayIgLS0+IE1vY2tbIkNvbnNvbGUubG9nXG5TaW11bGF0ZSAxLTNzIGRlbGF5XG5EZXZlbG9wbWVudCBvbmx5Il0KICAgIERlY2lzaW9uIC0tICJzZW5kZ3JpZCIgLS0+IFNHWyJAc2VuZGdyaWQvbWFpbCBTREtcblByb2R1Y3Rpb24iXQogICAgRGVjaXNpb24gLS0gInJlc2VuZCIgLS0+IFJlc2VuZFsicmVzZW5kIFNES1xuUHJvZHVjdGlvbiJdCgogICAgc3R5bGUgTW9jayBmaWxsOiMxYTFhMmUsY29sb3I6I2ZmZgogICAgc3R5bGUgU0cgZmlsbDojMGYzNDYwLGNvbG9yOiNmZmYKICAgIHN0eWxlIFJlc2VuZCBmaWxsOiMxNjIxM2UsY29sb3I6I2ZmZg==)
 
 ---
 
