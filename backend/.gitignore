@@ -1,0 +1,25 @@
+# ============================================
+# .gitignore — Files that should NEVER be committed
+# ============================================
+
+# Environment Variables — CONTAINS REAL SECRETS
+.env
+.env.local
+.env.production
+.env.staging
+
+# Node modules — huge, regenerated with npm install
+node_modules/
+
+# Lock files (optional — keep if you want reproducible installs)
+# pnpm-lock.yaml
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
